@@ -8,11 +8,11 @@ import dev.pellet.server.codec.http.HTTPEntity
 import dev.pellet.server.codec.http.HTTPHeader
 import dev.pellet.server.codec.http.HTTPHeaderConstants
 import dev.pellet.server.codec.http.HTTPHeaders
-import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.serializer
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 
 data class HTTPRouteResponse(
     val statusCode: Int,
@@ -69,11 +69,10 @@ data class HTTPRouteResponse(
 
         fun entity(
             byteBuffer: ByteBuffer,
-            contentType: ContentType
+            rawContentType: String
         ): Builder {
             this.entity = HTTPEntity.Content(PelletBuffer(byteBuffer))
-            val contentTypeHeaderValue = ContentTypeSerialiser.serialise(contentType)
-            this.headers[HTTPHeaderConstants.contentType] = contentTypeHeaderValue
+            this.headers[HTTPHeaderConstants.contentType] = rawContentType
             return this
         }
 
@@ -83,15 +82,35 @@ data class HTTPRouteResponse(
         ): Builder {
             val charset = contentType.charset() ?: Charsets.UTF_8
             val byteBuffer = charset.encode(entity)
-            return this.entity(byteBuffer, contentType)
+            val contentTypeHeaderValue = ContentTypeSerialiser.serialise(contentType)
+            return this.entity(byteBuffer, contentTypeHeaderValue)
         }
 
-        @OptIn(InternalSerializationApi::class)
+        fun entity(
+            entity: String,
+            rawContentType: String,
+            charset: Charset = Charsets.UTF_8
+        ): Builder {
+            val byteBuffer = charset.encode(entity)
+            return this.entity(byteBuffer, rawContentType)
+        }
+
         inline fun <reified T : Any> jsonEntity(
             encoder: Json,
             value: T
         ): Builder {
-            val encodedResponse = encoder.encodeToString(T::class.serializer(), value)
+            val encodedResponse = encoder.encodeToString(value)
+            val contentType = ContentTypes.Application.JSON
+            this.entity(encodedResponse, contentType)
+            return this
+        }
+
+        inline fun <reified T : Any> jsonEntity(
+            encoder: Json,
+            customSerializer: SerializationStrategy<T>,
+            value: T
+        ): Builder {
+            val encodedResponse = encoder.encodeToString(customSerializer, value)
             val contentType = ContentTypes.Application.JSON
             this.entity(encodedResponse, contentType)
             return this
